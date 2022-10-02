@@ -1,4 +1,4 @@
-SRC_CORE=src
+SRC_CORE=src/troposphere_playground
 SRC_TEST=tests
 SRC_RESOURCES=resources
 PYTHON=python3
@@ -16,7 +16,7 @@ help: ## Print help for each target
 		| sort | awk 'BEGIN {FS=":.* ## "}; {printf "%-25s %s\n", $$1, $$2};'
 
 run: ## Run the code
-	@$(PYTHON) $(SRC_CORE)/hello.py -f -n Foo test
+	@$(PYTHON) $(SRC_CORE)/main.py
 
 test: ## Test the code
 	@type coverage >/dev/null 2>&1 || (echo "Run '$(PIP) install coverage' first." >&2 ; exit 1)
