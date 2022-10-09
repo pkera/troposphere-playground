@@ -22,7 +22,7 @@ class VpcStack(BaseStack):
     def synth(self) -> str:
         logging.info(f"Synthesizing {self.template_name} stack...")
         # Create VPC
-        vpc = self.cf_template.add_resource(
+        vpc = self.template.add_resource(
             VPC(
                 'VPC',
                 CidrBlock=VPC_CIDR,
@@ -31,7 +31,7 @@ class VpcStack(BaseStack):
                     Name=f"{TAG_PREFIX}-vpc"
                 )))
         # Create Internet Gateway
-        internetGateway = self.cf_template.add_resource(
+        internetGateway = self.template.add_resource(
             InternetGateway(
                 'InternetGateway',
                 Tags=Tags(
@@ -39,13 +39,13 @@ class VpcStack(BaseStack):
                     Name=f"{TAG_PREFIX}-ig"
                 )))
         # Attach Internet Gateway to the VPC
-        gatewayAttachment = self.cf_template.add_resource(
+        gatewayAttachment = self.template.add_resource(
             VPCGatewayAttachment(
                 'AttachGateway',
                 VpcId=Ref(vpc),
                 InternetGatewayId=Ref(internetGateway)))
         # Create default Main Public RouteTable
-        mainRouteTable = self.cf_template.add_resource(
+        mainRouteTable = self.template.add_resource(
             RouteTable(
                 'MainRouteTable',
                 VpcId=Ref(vpc),
@@ -54,7 +54,7 @@ class VpcStack(BaseStack):
                     Name=f"{TAG_PREFIX}-PublicRouteTable-Main"
                 )))
         # Create default route 0.0.0.0/0 in the Public RouteTable
-        route = self.cf_template.add_resource(
+        route = self.template.add_resource(
             Route(
                 'Route',
                 DependsOn='AttachGateway',
@@ -63,4 +63,4 @@ class VpcStack(BaseStack):
                 RouteTableId=Ref(mainRouteTable),
             ))
 
-        return self.cf_template.to_yaml()
+        return self.template.to_yaml()
