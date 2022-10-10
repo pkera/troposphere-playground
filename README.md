@@ -1,6 +1,5 @@
 # Troposphere Playground
-
-This is a little experimentaiton with Troposphere
+Experimenting with Troposphere...
 
 ![arch_drawing](arch_diagram.png)
 
