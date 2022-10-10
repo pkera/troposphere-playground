@@ -1,22 +1,29 @@
 import logging
-from troposphere import Ref, Template, Tags, GetAtt
-from troposphere.ec2 import Route, VPCGatewayAttachment, SubnetRouteTableAssociation, \
-    Subnet, RouteTable, VPC, SubnetNetworkAclAssociation, EIP, InternetGateway
+from troposphere import Output, Ref, Export, AWS_REGION, Join, GetAtt
+from troposphere.ec2 import (
+    Route,
+    VPCGatewayAttachment,
+    RouteTable,
+    VPC,
+    EIP,
+    NatGateway,
+    InternetGateway,
+    Subnet,
+    SubnetRouteTableAssociation,
+    NetworkAclEntry,
+    NetworkAcl,
+    SubnetNetworkAclAssociation,
+)
 
-from constants import AZ_PUBLIC_NUMBER, REGION, STACK_ID, TAG_PREFIX, VPC_CIDR
+from constants import VPC_CIDR
 from stacks.base_stack import BaseStack
+from utils import tag
 
 
 class VpcStack(BaseStack):
-    """The networking stack containing the VPC and other basic network resources
-    """
-    def __init__(self, template_name: str, template_description: str):
-        """The constructor
+    """The networking stack containing the VPC and other basic network resources"""
 
-        Args:
-            template_name (str): the name of the template that will be used for the output filename
-            template_description (str): a short description
-        """
+    def __init__(self, template_name: str, template_description: str):
         super().__init__(template_name, template_description)
 
     def synth(self) -> str:
@@ -24,43 +31,190 @@ class VpcStack(BaseStack):
         # Create VPC
         vpc = self.template.add_resource(
             VPC(
-                'VPC',
+                "VPC",
                 CidrBlock=VPC_CIDR,
-                Tags=Tags(
-                    Application=STACK_ID,
-                    Name=f"{TAG_PREFIX}-vpc"
-                )))
+                EnableDnsSupport="true",
+                EnableDnsHostnames="true",
+                Tags=tag("vpc"),
+            )
+        )
         # Create Internet Gateway
-        internetGateway = self.template.add_resource(
-            InternetGateway(
-                'InternetGateway',
-                Tags=Tags(
-                    Application=STACK_ID,
-                    Name=f"{TAG_PREFIX}-ig"
-                )))
+        internet_gateway = self.template.add_resource(
+            InternetGateway("InternetGateway", Tags=tag("ig"))
+        )
         # Attach Internet Gateway to the VPC
-        gatewayAttachment = self.template.add_resource(
+        self.template.add_resource(
             VPCGatewayAttachment(
-                'AttachGateway',
-                VpcId=Ref(vpc),
-                InternetGatewayId=Ref(internetGateway)))
-        # Create default Main Public RouteTable
-        mainRouteTable = self.template.add_resource(
+                "AttachGateway", VpcId=Ref(vpc), InternetGatewayId=Ref(internet_gateway)
+            )
+        )
+
+        # Public Route Table
+        public_route_table = self.template.add_resource(
             RouteTable(
-                'MainRouteTable',
-                VpcId=Ref(vpc),
-                Tags=Tags(
-                    Application=STACK_ID,
-                    Name=f"{TAG_PREFIX}-PublicRouteTable-Main"
-                )))
+                "MainRouteTable", VpcId=Ref(vpc), Tags=tag("public-route-table-main")
+            )
+        )
         # Create default route 0.0.0.0/0 in the Public RouteTable
-        route = self.template.add_resource(
+        public_route = self.template.add_resource(
             Route(
-                'Route',
-                DependsOn='AttachGateway',
-                GatewayId=Ref(internetGateway),
-                DestinationCidrBlock='0.0.0.0/0',
-                RouteTableId=Ref(mainRouteTable),
-            ))
+                "PublicRoute",
+                DependsOn="AttachGateway",
+                GatewayId=Ref(internet_gateway),
+                DestinationCidrBlock="0.0.0.0/0",
+                RouteTableId=Ref(public_route_table),
+            )
+        )
+
+        # Load Balancer Subnets
+        alb_subnet_1 = self.template.add_resource(
+            Subnet(
+                "LoadBalancer1",
+                CidrBlock="10.0.0.0/28",
+                VpcId=Ref(vpc),
+                Tags=tag("alb-subnet-1"),
+                AvailabilityZone=Join("", [Ref(AWS_REGION), "a"]),
+            )
+        )
+        alb_subnet_2 = self.template.add_resource(
+            Subnet(
+                "LoadBalancer2",
+                CidrBlock="10.0.0.16/28",
+                VpcId=Ref(vpc),
+                Tags=tag("alb-subnet-2"),
+                AvailabilityZone=Join("", [Ref(AWS_REGION), "b"]),
+            )
+        )
+
+        # Private subnet
+        fargate_subnet = self.template.add_resource(
+            Subnet(
+                "FargateSubnet",
+                CidrBlock="10.0.0.128/28",
+                VpcId=Ref(vpc),
+                Tags=tag("fargate-subnet"),
+                AvailabilityZone=Join("", [Ref(AWS_REGION), "a"]),
+            )
+        )
+
+        # NAT
+        nat_ip = self.template.add_resource(
+            EIP(
+                "NatIp",
+                Domain="vpc",
+            )
+        )
+
+        nat_gateway = self.template.add_resource(
+            NatGateway(
+                "NatGateway",
+                AllocationId=GetAtt(nat_ip, "AllocationId"),
+                SubnetId=Ref(alb_subnet_1),
+            )
+        )
+
+        # Private route table
+        private_route_table = self.template.add_resource(
+            RouteTable(
+                "PrivateRouteTable",
+                VpcId=Ref(vpc),
+            )
+        )
+        private_nat_route = self.template.add_resource(
+            Route(
+                "PrivateNatRoute",
+                RouteTableId=Ref(private_route_table),
+                DestinationCidrBlock="0.0.0.0/0",
+                NatGatewayId=Ref(nat_gateway),
+            )
+        )
+
+        self.template.add_resource(
+            SubnetRouteTableAssociation(
+                "PrivateRouteTableAssociation",
+                SubnetId=Ref(fargate_subnet),
+                RouteTableId=Ref(private_route_table),
+            )
+        )
+
+        # Associate ALB subnets with the public RouteTable
+        self.template.add_resource(
+            SubnetRouteTableAssociation(
+                "AlbSubnet1RouteTableAssociation",
+                SubnetId=Ref(alb_subnet_1),
+                RouteTableId=Ref(public_route_table),
+            )
+        )
+        self.template.add_resource(
+            SubnetRouteTableAssociation(
+                "AlbSubnet2RouteTableAssociation",
+                SubnetId=Ref(alb_subnet_2),
+                RouteTableId=Ref(public_route_table),
+            )
+        )
+
+        public_network_acl = self.template.add_resource(
+            NetworkAcl(
+                "PublicNetworkAcl",
+                VpcId=Ref(vpc),
+                Tags=tag("acl"),
+            )
+        )
+
+        inbound_public_network_acl_entry = self.template.add_resource(
+            NetworkAclEntry(
+                "InboundHTTPNetworkAclEntry",
+                NetworkAclId=Ref(public_network_acl),
+                RuleNumber="100",
+                Protocol="-1",
+                Egress="false",
+                RuleAction="allow",
+                CidrBlock="0.0.0.0/0",
+            )
+        )
+
+        self.template.add_resource(
+            SubnetNetworkAclAssociation(
+                "PublicSubnet1NetworkAclAssociation",
+                SubnetId=Ref(alb_subnet_1),
+                NetworkAclId=Ref(public_network_acl),
+            )
+        )
+        self.template.add_resource(
+            SubnetNetworkAclAssociation(
+                "PublicSubnet2NetworkAclAssociation",
+                SubnetId=Ref(alb_subnet_2),
+                NetworkAclId=Ref(public_network_acl),
+            )
+        )
+
+        self.template.add_output(
+            [
+                Output(
+                    "TropoVPC",
+                    Description="The Tropo service VPC",
+                    Value=Ref(vpc),
+                    Export=Export("TropoVPC"),
+                ),
+                Output(
+                    "TropoAlbSubnet1",
+                    Description="The Tropo service AlbSubnet1",
+                    Value=Ref(alb_subnet_1),
+                    Export=Export("TropoAlbSubnet1"),
+                ),
+                Output(
+                    "TropoAlbSubnet2",
+                    Description="The Tropo service AlbSubnet1",
+                    Value=Ref(alb_subnet_2),
+                    Export=Export("TropoAlbSubnet2"),
+                ),
+                Output(
+                    "TropoPrivateSubnet",
+                    Description="The Tropo service PrivateSubnet",
+                    Value=Ref(fargate_subnet),
+                    Export=Export("TropoPrivateSubnet"),
+                ),
+            ]
+        )
 
         return self.template.to_yaml()

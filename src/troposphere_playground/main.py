@@ -3,21 +3,32 @@
 
 import logging
 from constants import TAG_PREFIX
-from stacks.alb_stack import AlbStack
+from stacks.vpc_stack import VpcStack
+from stacks.base_stack import BaseStack
+from stacks.application_stack import AppStack
+from stacks.ecr_stack import EcrStack
 
-from utils import export_cf_template_to_file
+
+STACKS: BaseStack = [
+    VpcStack(
+        template_name=f"{TAG_PREFIX}-vpc",
+        template_description="Base network infrastructure",
+    ),
+    EcrStack(template_name=f"{TAG_PREFIX}-ecr", template_description="ECR Repository"),
+    AppStack(
+        template_name=f"{TAG_PREFIX}-app",
+        template_description="Application infrastructure",
+    ),
+]
 
 
 def synthesize_stacks():
-    vpc_stack = AlbStack(
-        template_name=f"{TAG_PREFIX}-vpc",
-        template_description="Base network infrastructure"
-    )
-    vpc_stack.export()
+    for stack in STACKS:
+        stack.export()
+
 
 def main():
-    """Entry point for the application
-    """
+    """Entry point for the application"""
     logging.basicConfig(level=logging.DEBUG)
     try:
         synthesize_stacks()
