@@ -2,6 +2,8 @@
 
 This is a little experimentaiton with Troposphere
 
+![arch_drawing](arch_diagram.png)
+
 ## First-time Setup
 
 * Run `make deps-install`
