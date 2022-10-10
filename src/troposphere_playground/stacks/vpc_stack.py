@@ -161,13 +161,25 @@ class VpcStack(BaseStack):
             )
         )
 
-        inbound_public_network_acl_entry = self.template.add_resource(
+        self.template.add_resource(
             NetworkAclEntry(
                 "InboundHTTPNetworkAclEntry",
                 NetworkAclId=Ref(public_network_acl),
                 RuleNumber="100",
                 Protocol="-1",
                 Egress="false",
+                RuleAction="allow",
+                CidrBlock="0.0.0.0/0",
+            )
+        )
+
+        self.template.add_resource(
+            NetworkAclEntry(
+                "OutboundHTTPNetworkAclEntry",
+                NetworkAclId=Ref(public_network_acl),
+                RuleNumber="100",
+                Protocol="-1",
+                Egress="true",
                 RuleAction="allow",
                 CidrBlock="0.0.0.0/0",
             )

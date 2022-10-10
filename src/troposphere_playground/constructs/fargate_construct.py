@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from troposphere import GetAtt, Ref, Template, ImportValue
+from troposphere import GetAtt, Ref, Template, ImportValue, Join, AWS_ACCOUNT_ID, AWS_REGION
 from troposphere.ecs import (
     Cluster,
     ContainerDefinition,
@@ -9,12 +9,15 @@ from troposphere.ecs import (
     TaskDefinition,
     NetworkConfiguration,
     AwsvpcConfiguration,
+    LogConfiguration,
 )
 from troposphere.ec2 import SecurityGroup, SecurityGroupRule
 from troposphere.iam import Role, PolicyType
 from troposphere.elasticloadbalancingv2 import TargetGroup
+from troposphere.logs import LogGroup
 
 from constructs.base_construct import BaseConstruct, BaseConstructProps
+from constants import ECR_REPO_NAME, ECR_IMAGE_VERSION
 from utils import tag
 
 
@@ -86,6 +89,7 @@ class FargateConstruct(BaseConstruct):
                                 "ecr:CompleteLayerUpload",
                                 "logs:CreateLogStream",
                                 "logs:PutLogEvents",
+                                "logs:CreateLogGroup",
                             ],
                             "Resource": ["*"],
                             "Effect": "Allow",
@@ -126,12 +130,23 @@ class FargateConstruct(BaseConstruct):
                 ContainerDefinitions=[
                     ContainerDefinition(
                         Name="tropo-app",
-                        Image="public.ecr.aws/docker/library/httpd:latest",
+                        Image=Join(
+                            "",
+                            [
+                                Ref(AWS_ACCOUNT_ID),
+                                ".dkr.ecr.",
+                                Ref(AWS_REGION),
+                                ".amazonaws.com/",
+                                ECR_REPO_NAME,
+                                ":",
+                                ECR_IMAGE_VERSION,
+                            ],
+                        ),
                         PortMappings=[PortMapping(ContainerPort=80)],
-                        EntryPoint=["sh", "-c"],
-                        Command=[
-                            "/bin/sh -c \"echo 'Welcome to the Cloud Team' >  /usr/local/apache2/htdocs/index.html && httpd-foreground\""
-                        ],
+                        # EntryPoint=["sh", "-c"],
+                        # Command=[
+                        #     "echo Welcome to the Cloud Team >  /usr/local/apache2/htdocs/index.html && httpd-foreground"
+                        # ],
                     )
                 ],
                 Tags=tag("fargate-task-definition"),

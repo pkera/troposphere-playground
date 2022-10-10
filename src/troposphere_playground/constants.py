@@ -14,3 +14,4 @@ AZ_PRIVATE_NUMBER = 1
 
 # FARGATE
 ECR_REPO_NAME = "tropo-repository"
+ECR_IMAGE_VERSION = "latest"
